@@ -107,7 +107,7 @@
                 <div class="product-price-row">
                   <span v-if="p.list_price != null" class="product-price">NT$ {{ formatPrice(p.list_price) }}</span>
                   <span v-else class="product-price-tbd">價格面議</span>
-                  <span class="product-stock">庫存 {{ p.stock_quantity }} 件</span>
+                  <span class="product-stock">剩餘 {{ p.available_stock }} 件</span>
                 </div>
                 <button class="btn-select">選擇 →</button>
               </div>
@@ -134,10 +134,10 @@
                 <label class="form-label">訂購數量</label>
                 <div class="qty-control">
                   <button class="qty-btn" @click="qty = Math.max(1, qty - 1)">－</button>
-                  <input class="qty-input" type="number" v-model.number="qty" min="1" :max="selectedProduct.stock_quantity" />
-                  <button class="qty-btn" @click="qty = Math.min(selectedProduct.stock_quantity, qty + 1)">＋</button>
+                  <input class="qty-input" type="number" v-model.number="qty" min="1" :max="selectedProduct.available_stock" />
+                  <button class="qty-btn" @click="qty = Math.min(selectedProduct.available_stock, qty + 1)">＋</button>
                 </div>
-                <p class="form-hint">最多可訂 {{ selectedProduct.stock_quantity }} 件</p>
+                <p class="form-hint">剩餘可訂 {{ selectedProduct.available_stock }} 件</p>
               </div>
 
               <div class="form-group">
@@ -193,6 +193,22 @@ const orderError  = ref('')
 const orderSuccess = ref(false)
 const lastOrder   = ref(null)
 
+// ── 查詢各商品的已佔用數量（排除取消的訂單）─────────
+// 回傳 { productId: reservedQty, ... }
+async function fetchReservedMap(productIds) {
+  if (!productIds.length) return {}
+  const { data } = await supabase
+    .from('orders')
+    .select('product_id, quantity')
+    .in('product_id', productIds)
+    .neq('status', '取消')
+  const map = {}
+  ;(data || []).forEach(o => {
+    map[o.product_id] = (map[o.product_id] || 0) + Number(o.quantity)
+  })
+  return map
+}
+
 // ── 用 token 向 DB 查詢商品與售價 ──────────────────
 async function resolveToken(token) {
   tokenLoading.value = true
@@ -204,40 +220,59 @@ async function resolveToken(token) {
     .eq('token', token)
     .maybeSingle()
 
-  tokenLoading.value = false
-
   if (error || !data) {
     tokenError.value = '連結無效或已失效'
+    tokenLoading.value = false
     return
   }
   if (!data.products) {
     tokenError.value = '此連結對應的商品已下架'
+    tokenLoading.value = false
     return
   }
-  if (data.products.stock_quantity <= 0) {
+
+  // 計算實際可訂數量
+  const reserved = await fetchReservedMap([data.products.id])
+  const available = Math.max(0, data.products.stock_quantity - (reserved[data.products.id] || 0))
+
+  tokenLoading.value = false
+
+  if (available <= 0) {
     tokenError.value = '此商品目前無庫存，請向賣家確認'
     return
   }
 
-  selectedProduct.value = data.products
-  effectivePrice.value  = Number(data.sell_price)   // 價格來自 DB
+  selectedProduct.value = { ...data.products, available_stock: available }
+  effectivePrice.value  = Number(data.sell_price)
 }
 
 // ── 無 token 時載入全部上架商品 ────────────────────
 async function loadAllProducts() {
   productsLoading.value = true
-  const { data } = await supabase
+  const { data: products } = await supabase
     .from('products')
     .select('id, name, description, list_price, cost_price, stock_quantity')
     .gt('stock_quantity', 0)
     .order('name')
-  availableProducts.value = data || []
+
+  if (!products?.length) {
+    availableProducts.value = []
+    productsLoading.value = false
+    return
+  }
+
+  // 扣掉各商品已成立的訂單數量，得出實際可訂數
+  const reserved = await fetchReservedMap(products.map(p => p.id))
+  availableProducts.value = products
+    .map(p => ({ ...p, available_stock: Math.max(0, p.stock_quantity - (reserved[p.id] || 0)) }))
+    .filter(p => p.available_stock > 0)   // 過濾掉已無實際庫存的商品
+
   productsLoading.value = false
 }
 
 function selectProduct(p) {
   selectedProduct.value = p
-  effectivePrice.value  = p.list_price ?? null   // 來自 DB，非 URL
+  effectivePrice.value  = p.list_price ?? null
   qty.value   = 1
   notes.value = ''
   orderError.value = ''
@@ -248,8 +283,15 @@ async function submitOrder() {
   if (!buyer.value)          { orderError.value = '請先登入'; return }
   if (!selectedProduct.value){ orderError.value = '請選擇商品'; return }
   if (qty.value < 1)         { orderError.value = '數量至少 1 件'; return }
-  if (qty.value > selectedProduct.value.stock_quantity) {
-    orderError.value = `庫存不足，最多可訂 ${selectedProduct.value.stock_quantity} 件`; return
+
+  // 下單前再查一次實際可訂量（防止頁面停留太久、其他人插隊的情況）
+  const reserved = await fetchReservedMap([selectedProduct.value.id])
+  const latestAvailable = Math.max(0, selectedProduct.value.stock_quantity - (reserved[selectedProduct.value.id] || 0))
+  if (qty.value > latestAvailable) {
+    orderError.value = latestAvailable <= 0
+      ? '此商品庫存已被訂完，請聯繫賣家'
+      : `庫存不足，目前最多可訂 ${latestAvailable} 件`
+    return
   }
   if (effectivePrice.value == null) {
     orderError.value = '此商品尚未設定售價，請聯繫賣家'; return
