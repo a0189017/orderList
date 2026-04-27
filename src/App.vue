@@ -33,6 +33,10 @@
         <a href="/shop" target="_blank" class="shop-link">
           <span>🔗</span> 客戶訂購頁
         </a>
+        <div class="admin-user" v-if="adminSession">
+          <span class="admin-email">{{ adminSession.user.email }}</span>
+          <button class="btn-admin-logout" @click="signOut">登出</button>
+        </div>
       </div>
     </aside>
 
@@ -43,8 +47,17 @@
 </template>
 
 <script setup>
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-const route = useRoute()
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { useAdminAuth } from './composables/useAdminAuth.js'
+
+const route  = useRoute()
+const router = useRouter()
+const { adminSession, signOut: authSignOut } = useAdminAuth()
+
+async function signOut() {
+  await authSignOut()
+  router.push('/admin-login')
+}
 </script>
 
 <style>
@@ -153,6 +166,22 @@ body {
   text-decoration: none; transition: all 0.15s;
 }
 .shop-link:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+
+.admin-user {
+  margin-top: 8px; padding: 10px 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.admin-email {
+  display: block; font-size: 11px; color: rgba(255,255,255,0.4);
+  margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.btn-admin-logout {
+  width: 100%; padding: 7px; border-radius: 6px;
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6);
+  border: 1px solid rgba(255,255,255,0.1); font-size: 12px;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-admin-logout:hover { background: rgba(239,68,68,0.25); color: #fca5a5; border-color: rgba(239,68,68,0.3); }
 
 /* ===== 主內容 ===== */
 .main-content {

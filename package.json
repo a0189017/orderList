@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@line/liff": "^2.22.3",
     "@supabase/supabase-js": "^2.39.3",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"

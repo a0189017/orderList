@@ -1,56 +1,79 @@
 <template>
   <div class="shop-page">
-    <!-- ========== Header ========== -->
+    <!-- ── Header ── -->
     <header class="shop-header">
       <div class="shop-header-inner">
         <div class="shop-brand">
           <span class="shop-logo">🛍️</span>
-          <span class="shop-name">代購訂購</span>
+          <span class="shop-name">まるこ 代購選物🌸</span>
         </div>
-        <div v-if="buyer" class="user-info">
+        <div v-if="loggedIn && buyer" class="user-info">
           <img v-if="buyer.line_avatar_url" :src="buyer.line_avatar_url" class="user-avatar" />
           <div v-else class="user-avatar-placeholder">{{ (buyer.name || '?')[0] }}</div>
           <span class="user-name">{{ buyer.name }}</span>
-          <button class="btn-logout" @click="signOut">登出</button>
+          <button class="btn-logout" @click="logout">登出</button>
         </div>
       </div>
     </header>
 
     <div class="shop-body">
 
-      <!-- 載入中 -->
-      <div v-if="authLoading || tokenLoading" class="center-box">
+      <!-- LIFF 初始化中 -->
+      <div v-if="loading" class="center-box">
         <div class="spinner"></div>
-        <p>{{ authLoading ? '驗證中...' : '載入商品中...' }}</p>
+        <p>載入中...</p>
+      </div>
+
+      <!-- LIFF 設定錯誤（開發期間才會出現） -->
+      <div v-else-if="initError" class="center-box">
+        <div style="font-size:40px;margin-bottom:12px">⚙️</div>
+        <p style="color:#ef4444;font-weight:600;text-align:center">{{ initError }}</p>
+        <p style="color:#9ca3af;font-size:13px;margin-top:8px">請確認 .env 中的 VITE_LIFF_ID 已正確設定</p>
       </div>
 
       <!-- token 無效 -->
       <div v-else-if="tokenError" class="center-box">
-        <div style="font-size:48px;margin-bottom:12px;">❌</div>
-        <p style="color:#ef4444;font-weight:600;">{{ tokenError }}</p>
-        <p style="color:#9ca3af;font-size:13px;margin-top:8px;">請向賣家索取有效的訂購連結</p>
+        <div style="font-size:48px;margin-bottom:12px">❌</div>
+        <p style="color:#ef4444;font-weight:600">{{ tokenError }}</p>
+        <p style="color:#9ca3af;font-size:13px;margin-top:8px">請向賣家索取有效的訂購連結</p>
       </div>
 
       <!-- 未登入 -->
-      <div v-else-if="!session" class="login-box">
+      <div v-else-if="!loggedIn" class="login-box">
         <div class="login-card">
           <div class="login-icon">🛍️</div>
-          <h2 class="login-title">歡迎使用代購訂購系統</h2>
+          <h2 class="login-title">まるこ 代購選物🌸</h2>
           <p class="login-desc">請先使用 LINE 帳號登入，即可查看商品並完成訂購</p>
-          <button class="btn-line" @click="handleLineLogin">
+          <button class="btn-line" @click="login">
             <svg class="line-icon" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>
             </svg>
             使用 LINE 帳號登入
           </button>
-          <p class="login-note">登入後即可查看商品並進行訂購</p>
+          <p class="login-note">如果你是從 LINE 開啟此頁面，應會自動登入</p>
         </div>
       </div>
 
-      <!-- 已登入：訂購流程 -->
+      <!-- 已登入 但 buyer 同步失敗 -->
+      <div v-else-if="loggedIn && buyerError" class="center-box">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <p style="color:#ef4444;font-weight:600;text-align:center">{{ buyerError }}</p>
+        <p style="color:#9ca3af;font-size:12px;margin-top:8px;text-align:center">
+          請確認 Supabase migration v2 已執行，且 buyers 資料表有 line_user_id 欄位
+        </p>
+        <button style="margin-top:16px;padding:8px 20px;background:#6366f1;color:white;border:none;border-radius:8px;cursor:pointer;" @click="logout">重新登入</button>
+      </div>
+
+      <!-- 已登入 但 buyer 還在建立中 -->
+      <div v-else-if="loggedIn && !buyer" class="center-box">
+        <div class="spinner"></div>
+        <p>正在建立你的帳號...</p>
+      </div>
+
+      <!-- 已登入 + buyer 就緒：訂購流程 -->
       <div v-else class="order-flow">
 
-        <!-- 訂單成功 -->
+        <!-- 成功畫面 -->
         <div v-if="orderSuccess" class="success-box">
           <div class="success-icon">✅</div>
           <h2>訂單已送出！</h2>
@@ -63,10 +86,9 @@
           <button class="btn-again" @click="resetOrder">繼續訂購</button>
         </div>
 
-        <!-- 訂購表單 -->
         <div v-else>
 
-          <!-- 無 token：顯示所有商品 -->
+          <!-- 無 token：商品列表 -->
           <div v-if="!urlToken && !selectedProduct" class="section">
             <h2 class="section-title">選擇商品</h2>
             <div v-if="productsLoading" class="center-box"><div class="spinner"></div></div>
@@ -75,7 +97,11 @@
               <p>目前沒有可訂購的商品</p>
             </div>
             <div v-else class="product-grid">
-              <div v-for="p in availableProducts" :key="p.id" class="product-card" @click="selectProduct(p, null)">
+              <div
+                v-for="p in availableProducts" :key="p.id"
+                class="product-card"
+                @click="selectProduct(p)"
+              >
                 <div class="product-name">{{ p.name }}</div>
                 <div v-if="p.description" class="product-desc">{{ p.description }}</div>
                 <div class="product-price-row">
@@ -88,7 +114,7 @@
             </div>
           </div>
 
-          <!-- 有 token 或已選商品：填寫訂購資訊 -->
+          <!-- 有 token 或已選商品：填寫訂購表單 -->
           <div v-else-if="selectedProduct" class="section">
             <button v-if="!urlToken" class="btn-back" @click="selectedProduct = null">← 返回商品列表</button>
 
@@ -138,54 +164,43 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '../supabase.js'
-import { useAuth } from '../composables/useAuth.js'
+import { useLiff } from '../composables/useLiff.js'
 
 const route = useRoute()
-const { session, buyer, loading: authLoading, signInWithLine, signOut } = useAuth()
+const { loading, loggedIn, buyer, initError, buyerError, login, logout } = useLiff()
 
-// ===== URL 參數 =====
-// 只接受 token，完全不接受 ?price（移除明文定價）
+// ── URL 參數（只接受 token，不接受 price） ──────────
 const urlToken = computed(() => route.query.token || null)
 
-// ===== Token 查詢結果 =====
-// 由 DB 決定的商品與售價，客戶完全無法影響
-const tokenLoading = ref(false)
-const tokenError = ref('')
-const tokenProduct = ref(null)   // 從 share_links 取出的商品資料
-const tokenPrice = ref(null)     // 從 share_links 取出的售價
-
-// ===== 商品瀏覽（無 token 時） =====
-const availableProducts = ref([])
-const productsLoading = ref(false)
-
-// ===== 訂單表單 =====
+// ── Token 解析結果 ──────────────────────────────────
+const tokenLoading   = ref(false)
+const tokenError     = ref('')
 const selectedProduct = ref(null)
-const effectivePrice = ref(null)   // 最終使用的售價（由 DB 決定）
-const qty = ref(1)
-const notes = ref('')
-const submitting = ref(false)
-const orderError = ref('')
-const orderSuccess = ref(false)
-const lastOrder = ref(null)
+const effectivePrice  = ref(null)   // 完全由 DB 決定，URL 無法影響
 
-// ===== 解析 token：向 DB 查詢，取得商品與售價 =====
+// ── 商品瀏覽（無 token 時） ─────────────────────────
+const availableProducts = ref([])
+const productsLoading   = ref(false)
+
+// ── 訂單表單 ───────────────────────────────────────
+const qty       = ref(1)
+const notes     = ref('')
+const submitting  = ref(false)
+const orderError  = ref('')
+const orderSuccess = ref(false)
+const lastOrder   = ref(null)
+
+// ── 用 token 向 DB 查詢商品與售價 ──────────────────
 async function resolveToken(token) {
   tokenLoading.value = true
-  tokenError.value = ''
-  tokenProduct.value = null
-  tokenPrice.value = null
+  tokenError.value   = ''
 
   const { data, error } = await supabase
     .from('share_links')
-    .select(`
-      sell_price,
-      products (
-        id, name, description, cost_price, stock_quantity
-      )
-    `)
+    .select(`sell_price, products(id, name, description, cost_price, stock_quantity)`)
     .eq('token', token)
     .maybeSingle()
 
@@ -204,15 +219,11 @@ async function resolveToken(token) {
     return
   }
 
-  // 價格完全從 DB 取出，URL 中的任何參數都不影響
-  tokenProduct.value = data.products
-  tokenPrice.value = Number(data.sell_price)
-
   selectedProduct.value = data.products
-  effectivePrice.value = tokenPrice.value
+  effectivePrice.value  = Number(data.sell_price)   // 價格來自 DB
 }
 
-// ===== 無 token 時：載入全部可訂購商品 =====
+// ── 無 token 時載入全部上架商品 ────────────────────
 async function loadAllProducts() {
   productsLoading.value = true
   const { data } = await supabase
@@ -224,24 +235,19 @@ async function loadAllProducts() {
   productsLoading.value = false
 }
 
-function selectProduct(p, price) {
+function selectProduct(p) {
   selectedProduct.value = p
-  // 無 token 時使用 list_price（從 DB 取得，非 URL 參數）
-  effectivePrice.value = price ?? p.list_price ?? null
-  qty.value = 1
+  effectivePrice.value  = p.list_price ?? null   // 來自 DB，非 URL
+  qty.value   = 1
   notes.value = ''
   orderError.value = ''
 }
 
-function handleLineLogin() {
-  // 保留 token 參數，讓 OAuth 完成後回到正確頁面
-  signInWithLine(window.location.href)
-}
-
+// ── 下單 ───────────────────────────────────────────
 async function submitOrder() {
-  if (!buyer.value) { orderError.value = '請先登入'; return }
-  if (!selectedProduct.value) { orderError.value = '請選擇商品'; return }
-  if (qty.value < 1) { orderError.value = '數量至少 1 件'; return }
+  if (!buyer.value)          { orderError.value = '請先登入'; return }
+  if (!selectedProduct.value){ orderError.value = '請選擇商品'; return }
+  if (qty.value < 1)         { orderError.value = '數量至少 1 件'; return }
   if (qty.value > selectedProduct.value.stock_quantity) {
     orderError.value = `庫存不足，最多可訂 ${selectedProduct.value.stock_quantity} 件`; return
   }
@@ -249,18 +255,17 @@ async function submitOrder() {
     orderError.value = '此商品尚未設定售價，請聯繫賣家'; return
   }
 
-  orderError.value = ''
-  submitting.value = true
+  orderError.value  = ''
+  submitting.value  = true
 
-  // sell_price 從 effectivePrice 取得（已由 DB 決定，非 URL 參數）
   const { error } = await supabase.from('orders').insert({
-    buyer_id: buyer.value.id,
+    buyer_id:   buyer.value.id,
     product_id: selectedProduct.value.id,
-    quantity: qty.value,
-    sell_price: effectivePrice.value,
+    quantity:   qty.value,
+    sell_price: effectivePrice.value,          // 來自 DB，不可被客戶篡改
     cost_price: selectedProduct.value.cost_price || 0,
-    status: '待付款',
-    notes: notes.value.trim() || null,
+    status:     '待付款',
+    notes:      notes.value.trim() || null,
   })
 
   submitting.value = false
@@ -268,29 +273,24 @@ async function submitOrder() {
 
   lastOrder.value = {
     productName: selectedProduct.value.name,
-    quantity: qty.value,
-    sell_price: effectivePrice.value,
+    quantity:    qty.value,
+    sell_price:  effectivePrice.value,
   }
   orderSuccess.value = true
 }
 
 function resetOrder() {
   orderSuccess.value = false
-  if (!urlToken.value) {
-    selectedProduct.value = null
-    effectivePrice.value = null
-  }
-  qty.value = 1
-  notes.value = ''
-  orderError.value = ''
-  lastOrder.value = null
+  if (!urlToken.value) { selectedProduct.value = null; effectivePrice.value = null }
+  qty.value = 1; notes.value = ''; orderError.value = ''; lastOrder.value = null
 }
 
 function formatPrice(n) { return Number(n).toLocaleString('zh-TW') }
 
-// ===== 登入後觸發載入 =====
-watch(session, async (s) => {
-  if (!s) return
+// ── 登入後觸發資料載入 ─────────────────────────────
+// LIFF 在 LINE IAB 通常一開啟就是 loggedIn，watch immediate 確保不遺漏
+watch(loggedIn, async (isLoggedIn) => {
+  if (!isLoggedIn) return
   if (urlToken.value) {
     await resolveToken(urlToken.value)
   } else {
@@ -301,7 +301,6 @@ watch(session, async (s) => {
 
 <style scoped>
 .shop-page { min-height: 100vh; background: linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%); display: flex; flex-direction: column; }
-
 .shop-header { background: white; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 4px rgba(0,0,0,0.06); position: sticky; top: 0; z-index: 50; }
 .shop-header-inner { max-width: 640px; margin: 0 auto; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; }
 .shop-brand { display: flex; align-items: center; gap: 8px; }
@@ -316,7 +315,7 @@ watch(session, async (s) => {
 
 .shop-body { flex: 1; max-width: 640px; margin: 0 auto; width: 100%; padding: 24px 20px 60px; }
 
-.center-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px; gap: 16px; color: #9ca3af; }
+.center-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px; gap: 16px; color: #9ca3af; min-height: 40vh; }
 .spinner { width: 32px; height: 32px; border-radius: 50%; border: 3px solid #e5e7eb; border-top-color: #6366f1; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -330,6 +329,7 @@ watch(session, async (s) => {
 .line-icon { width: 22px; height: 22px; flex-shrink: 0; }
 .login-note { font-size: 12px; color: #9ca3af; margin-top: 16px; }
 
+.section { }
 .section-title { font-size: 18px; font-weight: 700; color: #1f2937; margin-bottom: 16px; }
 .empty-products { text-align: center; padding: 48px; color: #9ca3af; }
 .product-grid { display: flex; flex-direction: column; gap: 12px; }
@@ -353,7 +353,7 @@ watch(session, async (s) => {
 .price-tbd { font-size: 14px; color: #9ca3af; font-weight: 400; }
 
 .order-form-card { background: white; border-radius: 14px; padding: 20px; border: 1px solid #e5e7eb; }
-.qty-control { display: flex; align-items: center; gap: 0; margin-bottom: 4px; }
+.qty-control { display: flex; align-items: center; margin-bottom: 4px; }
 .qty-btn { width: 40px; height: 40px; border: 1.5px solid #d1d5db; background: #f9fafb; font-size: 18px; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
 .qty-btn:hover { background: #f3f4f6; border-color: #6366f1; }
 .qty-input { width: 64px; text-align: center; border: 1.5px solid #d1d5db; padding: 8px; font-size: 16px; font-weight: 700; margin: 0 8px; border-radius: 8px; -moz-appearance: textfield; }
